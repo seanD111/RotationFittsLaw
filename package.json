@@ -1,0 +1,25 @@
+{
+  "name": "rotationfittslaw",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seanD111/RotationFittsLaw.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/seanD111/RotationFittsLaw/issues"
+  },
+  "homepage": "https://github.com/seanD111/RotationFittsLaw#readme",
+  "dependencies": {
+    "electron": "^1.7.9"
+  },
+  "devDependencies": {
+    "electron-packager": "^10.1.0"
+  }
+}
