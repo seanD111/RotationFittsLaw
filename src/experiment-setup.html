@@ -4,6 +4,82 @@
     <title>Experiment Setup</title>
 </head>
 <body>
+    <form id="experimentSetup">
+        <table style="width:100%">
+            <tr><td>Participant Code:</td><td><input type="text" name="participantCode" value="P01"></td></tr>
+            <tr><td>Condition Code:</td><td><input type="text" name="conditionCode" value="C01"></td></tr>
+            <tr><td>Block Code:</td><td><input type="text" name="blockCode" value="B01"></td></tr>
+            <tr><td>Number of Targets:</td><td><input type="text" name="numTargets" value="19"></td></tr>
 
+            <tr><td>Target Amplitudes:</td><td><input type="text" name="targetAmplitudes" value="0.7854 1.0472 2.3562 2.6180"></td></tr>
+
+            <tr><td>Target Widths:</td><td><input type="text" name="targetWidths" value="0.3927 0.19635"></td></tr>
+
+            <tr><td>Error Threshold (%):</td><td><input type="text" name="errorThreshold" value="50"></td></tr>            
+        </table>
+        <input type="submit" value="Start Experiment">
+    </form>
 </body>
+<script type="text/javascript">
+    const FORM_FIELDS = ['participantCode', "conditionCode", "blockCode", "numTargets", "targetAmplitudes", "targetWidths", "errorThreshold"];
+    const FORM_NUMERIC_FIELDS = ['numTargets', "targetAmplitudes", "targetWidths", "errorThreshold"];
+
+    const {ipcRenderer} = require('electron');
+    const submitForm = document.getElementById("experimentSetup");
+
+    document.body.addEventListener("keypress", (event)=>{
+        event.preventDefault(); 
+        if(event.code==="Space"){
+            submitSetupForm();
+        } 
+    });
+
+    submitForm.addEventListener('submit', (event)=>{
+        event.preventDefault();  
+        submitSetupForm();      
+    });
+
+    function submitSetupForm(){
+        var formData = new FormData(submitForm);
+        var ConvertedJSON= {};
+        for (const [key, value]  of formData.entries()){
+            ConvertedJSON[key] = value;
+        }
+
+        if(validateSetupData(ConvertedJSON)){
+            ipcRenderer.sendSync('setup:complete', ConvertedJSON);
+        }
+        else{
+            console.log(ConvertedJSON);
+        }
+    }
+
+    function validateSetupData(formjson){
+        let isValid = true;
+        FORM_FIELDS.forEach((field)=>{
+            field in formjson ? null : isValid = false;
+        })
+
+        formjson["targetAmplitudes"] = formjson["targetAmplitudes"].split(' ');
+        formjson["targetWidths"] = formjson["targetWidths"].split(' ');
+
+        FORM_NUMERIC_FIELDS.forEach((field)=>{
+            console.log()
+            if(typeof formjson[field] == 'object'){
+                formjson[field].forEach((number, numi)=>{
+                    formjson[field][numi] = Number(formjson[field][numi]);
+                    formjson[field][numi] !== NaN ? null : isValid = false; 
+                })
+            }
+            else{
+                formjson[field]= Number(formjson[field]);
+                formjson[field] !== NaN ? null : isValid = false; 
+            }
+
+        })
+        return isValid;
+    }
+
+
+</script>
 </html>

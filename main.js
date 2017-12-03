@@ -1,41 +1,85 @@
-import { app, BrowserWindow, Menu, ipc } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) { // eslint-disable-line global-require
   app.quit();
 }
 
+/** variable to hold the data for the current block. has properties:
+    blockCode: str
+    conditionCode: str
+    errorThreshold: num
+    numTargets: num
+    participantCode: str
+    targetAmplitudes: arr[num]
+    targetWidths: arr[num]
+*/
+let blockConfiguration={};
+
+/**
+ * Holds the randomized sequence information for this block
+ * @type {Object}
+ * @property {array} sequences holds an array of the experiment sequences
+ * @property {integer} current holds the index to current sequence
+ */
+let block={};
+
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let experimentSetupWindow;
 let sequenceWindow;
 let sequenceSummaryWindow;
+let blockSummaryWindow;
 
-
-const createExperimentSequenceSummaryWindow = () =>{
-    sequenceSummaryWindow = new BrowserWindow({
+const createBlockSummaryWindow = () =>{
+    blockSummaryWindow = new BrowserWindow({
+        show: false,
         width: 400,
-        height: 600
+        height: 600,
+        autoHideMenuBar: true,
+        title: "Sequence Summary"
     })
-    sequenceSummaryWindow.loadURL(`file://${__dirname}/src/experiment-sequence-summary.html`);
+    blockSummaryWindow.loadURL(`file://${__dirname}/src/block-summary.html`);
+    blockSummaryWindow.once('ready-to-show', () => {
+      blockSummaryWindow.show()
+    })
+    blockSummaryWindow.on('close', () => {
+        blockSummaryWindow = null;
+    });
+}
 
-
+const createSequenceSummary = () =>{
+    sequenceSummaryWindow = new BrowserWindow({
+        show: false,
+        width: 400,
+        height: 600,
+        autoHideMenuBar: true,
+        title: "Sequence Summary"
+    })
+    sequenceSummaryWindow.loadURL(`file://${__dirname}/src/sequence-summary.html`);
+    sequenceSummaryWindow.once('ready-to-show', () => {
+        sequenceSummaryWindow.show()
+    })
 
     sequenceSummaryWindow.on('close', () => {
         sequenceSummaryWindow = null;
     });
 }
 
-const createExperimentSequenceWindow = () =>{
+const createSequenceWindow = (onRdyFn) =>{
     sequenceWindow = new BrowserWindow({
+        show: false,
         fullscreen: true, 
         alwaysOnTop: true,
         frame: false
     })
 
-    sequenceWindow.loadURL(`file://${__dirname}/src/experiment-sequence.html`);
+    sequenceWindow.loadURL(`file://${__dirname}/src/sequence.html`);
+    sequenceWindow.once('ready-to-show', () => {
+        sequenceWindow.show()
+        onRdyFn();
+    })
     sequenceWindow.on('close', () => {
-        createExperimentSequenceSummaryWindow();
         sequenceWindow = null;
     });
 }
@@ -44,26 +88,25 @@ const createExperimentSetupWindow = () =>{
     experimentSetupWindow = new BrowserWindow({
         width: 400,
         height: 600,
-        autoHideMenuBar: true
+        autoHideMenuBar: true,
+        title: "Experiment Setup"
     })
     experimentSetupWindow.loadURL(`file://${__dirname}/src/experiment-setup.html`);
 
-
+    experimentSetupWindow.once('ready-to-show', () => {
+      experimentSetupWindow.show()
+    })
 
     experimentSetupWindow.on('close', () => {
-        createExperimentSequenceWindow();
         experimentSetupWindow = null;
     });
 
-    Menu.setApplicationMenu(new Menu());
+    // Menu.setApplicationMenu(new Menu());
 }
 
-
-
-
-
-
-
+const closeExperimentSetupWindow = ()=>{
+    experimentSetupWindow.close();
+}
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -87,5 +130,49 @@ app.on('activate', () => {
   }
 });
 
+
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
+
+ipcMain.on('setup:complete', (event, setupConfig) => {
+
+    createDataFiles();
+
+    blockConfiguration = setupConfig;
+    block['sequences'] = shuffle(prepareSequenceSetups(setupConfig));
+    block['current'] = 0;
+    
+    createSequenceWindow(startNextSequence);    
+    closeExperimentSetupWindow(); 
+})
+
+// create the data output csv files for this participant/block/condition
+function createDataFiles(){
+    let sd1File = `FittsTaskRotation-${}-${}-${}.sd1`;
+}
+
+function startNextSequence(){
+    let cfg= blockConfiguration;
+    sequenceWindow.send("sequence:start", block);
+}
+
+
+function prepareSequenceSetups(setupConfig){
+    let allSequences = [];
+    setupConfig["targetAmplitudes"].forEach((amplitude)=>{
+        setupConfig["targetWidths"].forEach((width)=>{
+            allSequences.push({amplitude: amplitude, width: width});
+        })
+    })
+    return allSequences;
+}
+
+function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+
