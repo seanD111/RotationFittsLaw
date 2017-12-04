@@ -20,7 +20,8 @@ let blockConfiguration={};
  * Holds the randomized sequence information for this block
  * @type {Object}
  * @property {array} sequences holds an array of the experiment sequences
- * @property {integer} current holds the index to current sequence
+ * @property {int} currentSeq holds the index to current sequence
+ * @property {int} trials specifies the nuber of targets in the sequence
  */
 let block={};
 
@@ -134,13 +135,13 @@ app.on('activate', () => {
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
 
-ipcMain.on('setup:complete', (event, setupConfig) => {
-
-    createDataFiles();
+ipcMain.on('setup:complete', (event, setupConfig) => {    
 
     blockConfiguration = setupConfig;
+    block['trials'] =  blockConfiguration['numTargets'] ;
     block['sequences'] = shuffle(prepareSequenceSetups(setupConfig));
-    block['current'] = 0;
+    block['currentSeq'] = 0;
+    createDataFiles();
     
     createSequenceWindow(startNextSequence);    
     closeExperimentSetupWindow(); 
@@ -148,7 +149,13 @@ ipcMain.on('setup:complete', (event, setupConfig) => {
 
 // create the data output csv files for this participant/block/condition
 function createDataFiles(){
-    let sd1File = `FittsTaskRotation-${}-${}-${}.sd1`;
+    let sd1File = `FittsTaskRotation
+    -${blockConfiguration["participantCode"]}
+    -${blockConfiguration["conditionCode"]}
+    -${blockConfiguration["blockCode"]}
+    .sd1`.replace(/\s/gm,"");;
+
+    console.log(sd1File);
 }
 
 function startNextSequence(){

@@ -1,18 +1,148 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sequence</title>
+    <title>Sequence</title>    
 </head>
-<body>
+<body style="overflow:hidden; margin: 0 0 0 0;">
 
+<!--     <script type="text/javascript" src="js/lib/three.min.js"></script>  -->
+
+    <script type="text/javascript">
+        const MOUSE_CDGAIN = (1/10) *(Math.PI/180);
+        const SPHERE_SEGMENTS=64;
+        const SPHERE_RADIUS = 1;
+        const THREE = require('three');
+        const {ipcRenderer} = require('electron');
+
+        document.body.requestPointerLock = document.body.requestPointerLock ;
+        // Ask the browser to lock the pointer
+        document.body.requestPointerLock();
+
+
+        var _sequenceData;
+        var _sphereGroup;
+
+        initializeExperiment();
+        document.addEventListener('mousemove', (event)=>{
+            var deltaX= event.movementX;
+            var deltaY= event.movementY;
+
+            var deltaRotationQuaternion = new THREE.Quaternion()
+                .setFromEuler(new THREE.Euler(
+                    deltaY*MOUSE_CDGAIN,
+                    deltaX*MOUSE_CDGAIN,
+                    0,
+                    'XYZ'
+                ));
+            
+            _sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, _sphereGroup.quaternion);
+        }, false);
+
+        ipcRenderer.on('sequence:start', (event, sequenceData)=>{
+            _sequenceData = sequenceData;
+            _sequenceData['currentTrial'] = 0;
+            console.log(_sequenceData)
+            startSequence();            
+        })
+        function setEuler(x, y, z, order){
+           _sphereGroup.setRotationFromEuler(new THREE.Euler(x, y, z, order));
+        }
+        function getEuler(){
+            return _sphereGroup.rotation;
+        }
+
+        function initializeExperiment(){
+            var aspect = window.innerWidth / window.innerHeight;
+            var frustum = SPHERE_RADIUS*1.1;
+            var scene = new THREE.Scene();
+            var camera = new THREE.OrthographicCamera( -frustum * aspect, frustum * aspect, frustum, -frustum, 1, 1000 );
+            // var camera = new THREE.PerspectiveCamera( 75, aspect, 0.1, 1000 );
+            var renderer = new THREE.WebGLRenderer();
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            renderer.setClearColor (0xffffff, 1);
+            document.body.appendChild( renderer.domElement );
+
+            camera.position.set(0, 0, 50);
+            // camera.setRotationFromEuler(new THREE.Euler(0,0,Math.PI, 'ZYX'))
+
+            var light = new THREE.PointLight(0xffffff);
+            light.position.set(0, 0, 4);
+            
+            var sphereGeom = new THREE.SphereGeometry(SPHERE_RADIUS, SPHERE_SEGMENTS, SPHERE_SEGMENTS);            
+
+            var loader = new THREE.TextureLoader().load("img/metal.jpg", function(texture){
+                var metalMat = new THREE.MeshBasicMaterial({map: texture, transparent: true, opacity: 0.15});
+                var metalSphere = new THREE.Mesh(sphereGeom, metalMat);
+                metalSphere.renderOrder=1;
+                metalSphere.name = "sphere";
+
+                _sphereGroup = new THREE.Group()
+
+                _sphereGroup.add(metalSphere)
+                scene.add( _sphereGroup );
+            });
+
+            var crossMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+            // crosshair size
+            var x = 0.03, y = 0.03;
+
+            var crossGeom = new THREE.Geometry();
+
+            // crosshair
+            crossGeom.vertices.push(new THREE.Vector3(0, y, 0));
+            crossGeom.vertices.push(new THREE.Vector3(0, -y, 0));
+            crossGeom.vertices.push(new THREE.Vector3(0, 0, 0));
+            crossGeom.vertices.push(new THREE.Vector3(x, 0, 0));    
+            crossGeom.vertices.push(new THREE.Vector3(-x, 0, 0));
+
+            var crosshair = new THREE.Line( crossGeom, crossMat );
+
+            crosshair.position.x = 0;
+            crosshair.position.y = 0;
+
+            crosshair.position.z = 1.1;
+
+
+            scene.add( crosshair );
+
+            
+            var render = function () {
+              requestAnimationFrame( render );
+              renderer.render( scene, camera );
+            };
+
+            render();
+        }
+
+
+        function startSequence(){
+            var prevTarget = _sphereGroup.getObjectByName( "target");
+            _sphereGroup.remove(prevTarget);
+
+            var currSeq = _sequenceData["sequences"][_sequenceData["currentSeq"]];
+            var width = currSeq['width'];
+
+            var coneGeom = new THREE.ConeGeometry(width*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
+            for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
+                i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
+            }
+            var coneEndMat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
+            var coneTransparentMat = new THREE.MeshBasicMaterial( { color: 0x000000, transparent: true, opacity: 0.15 } );
+            var cone = new THREE.Mesh( coneGeom, new THREE.MultiMaterial([coneTransparentMat, coneEndMat]) );
+            cone.translateY(-SPHERE_RADIUS/2);
+            let conePivot = new THREE.Object3D();
+            conePivot.add(cone);                
+            conePivot.setRotationFromEuler(new THREE.Euler(-Math.PI/2,0,0, 'XYZ'));
+            conePivot.name = "target";
+            
+            _sphereGroup.add(conePivot);
+
+        }
+
+
+
+
+    </script>
 </body>
-<script type="text/javascript">
-    const {ipcRenderer} = require('electron');
-
-
-    ipcRenderer.on('sequence:start', (event, sequenceData)=>{
-
-    })
-
-</script>
 </html>
