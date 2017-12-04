@@ -8,50 +8,74 @@
 <!--     <script type="text/javascript" src="js/lib/three.min.js"></script>  -->
 
     <script type="text/javascript">
+        const GYRO_CDGAIN = 2;
         const MOUSE_CDGAIN = (1/10) *(Math.PI/180);
         const SPHERE_SEGMENTS=64;
         const SPHERE_RADIUS = 1;
         const THREE = require('three');
         const {ipcRenderer} = require('electron');
 
-        document.body.requestPointerLock = document.body.requestPointerLock ;
-        // Ask the browser to lock the pointer
-        document.body.requestPointerLock();
+
 
 
         var _sequenceData;
         var _sphereGroup;
 
-        initializeExperiment();
-        document.addEventListener('mousemove', (event)=>{
-            var deltaX= event.movementX;
-            var deltaY= event.movementY;
 
-            var deltaRotationQuaternion = new THREE.Quaternion()
+        ipcRenderer.on('sequence:start', (event, sequenceData)=>{
+            initializeExperiment(function(){
+                _sequenceData = sequenceData;
+                _sequenceData['currentTrial'] = 0;
+                console.log(_sequenceData)
+                if(_sequenceData['inputType']==='mouse'){
+                    document.body.requestPointerLock = document.body.requestPointerLock ;
+                    // Ask the browser to lock the pointer
+                    document.body.requestPointerLock();
+                    document.addEventListener('mousemove', (event)=>{
+                        var deltaX= event.movementX;
+                        var deltaY= event.movementY;
+
+                        deltaEuler(deltaY*MOUSE_CDGAIN,deltaX*MOUSE_CDGAIN,0,'XYZ');
+
+                    }, false);
+                }
+
+                ipcRenderer.on('device:rotation', (event, rot)=>{
+                    console.log(rot);
+                    setEuler(rot.beta, rot.alpha, -rot.gamma, 'YXZ');
+                })
+                startSequence();  
+
+            });          
+        })
+
+        function deltaEuler(x, y, z, order){
+           var deltaRotationQuaternion = new THREE.Quaternion()
                 .setFromEuler(new THREE.Euler(
-                    deltaY*MOUSE_CDGAIN,
-                    deltaX*MOUSE_CDGAIN,
-                    0,
-                    'XYZ'
+                    x,
+                    y,
+                    z,
+                    order
                 ));
             
             _sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, _sphereGroup.quaternion);
-        }, false);
-
-        ipcRenderer.on('sequence:start', (event, sequenceData)=>{
-            _sequenceData = sequenceData;
-            _sequenceData['currentTrial'] = 0;
-            console.log(_sequenceData)
-            startSequence();            
-        })
+        }
         function setEuler(x, y, z, order){
-           _sphereGroup.setRotationFromEuler(new THREE.Euler(x, y, z, order));
+           var deltaRotationQuaternion = new THREE.Quaternion()
+                .setFromEuler(new THREE.Euler(
+                    x,
+                    y,
+                    z,
+                    order
+                ));
+            
+            _sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
         }
         function getEuler(){
             return _sphereGroup.rotation;
         }
 
-        function initializeExperiment(){
+        function initializeExperiment(callback){
             var aspect = window.innerWidth / window.innerHeight;
             var frustum = SPHERE_RADIUS*1.1;
             var scene = new THREE.Scene();
@@ -80,44 +104,44 @@
 
                 _sphereGroup.add(metalSphere)
                 scene.add( _sphereGroup );
+                var crossMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+                // crosshair size
+                var x = 0.03, y = 0.03;
+
+                var crossGeom = new THREE.Geometry();
+
+                // crosshair
+                crossGeom.vertices.push(new THREE.Vector3(0, y, 0));
+                crossGeom.vertices.push(new THREE.Vector3(0, -y, 0));
+                crossGeom.vertices.push(new THREE.Vector3(0, 0, 0));
+                crossGeom.vertices.push(new THREE.Vector3(x, 0, 0));    
+                crossGeom.vertices.push(new THREE.Vector3(-x, 0, 0));
+
+                var crosshair = new THREE.Line( crossGeom, crossMat );
+
+                crosshair.position.x = 0;
+                crosshair.position.y = 0;
+
+                crosshair.position.z = 1.1;
+
+
+                scene.add( crosshair );
+
+                
+                var render = function () {
+                  requestAnimationFrame( render );
+                  renderer.render( scene, camera );
+                };
+                render();
+
+                callback();
             });
-
-            var crossMat = new THREE.LineBasicMaterial({ color: 0x000000 });
-
-            // crosshair size
-            var x = 0.03, y = 0.03;
-
-            var crossGeom = new THREE.Geometry();
-
-            // crosshair
-            crossGeom.vertices.push(new THREE.Vector3(0, y, 0));
-            crossGeom.vertices.push(new THREE.Vector3(0, -y, 0));
-            crossGeom.vertices.push(new THREE.Vector3(0, 0, 0));
-            crossGeom.vertices.push(new THREE.Vector3(x, 0, 0));    
-            crossGeom.vertices.push(new THREE.Vector3(-x, 0, 0));
-
-            var crosshair = new THREE.Line( crossGeom, crossMat );
-
-            crosshair.position.x = 0;
-            crosshair.position.y = 0;
-
-            crosshair.position.z = 1.1;
-
-
-            scene.add( crosshair );
-
-            
-            var render = function () {
-              requestAnimationFrame( render );
-              renderer.render( scene, camera );
-            };
-
-            render();
         }
 
 
         function startSequence(){
-            var prevTarget = _sphereGroup.getObjectByName( "target");
+            var prevTarget = _sphereGroup.getObjectByName("target");
             _sphereGroup.remove(prevTarget);
 
             var currSeq = _sequenceData["sequences"][_sequenceData["currentSeq"]];
@@ -133,7 +157,7 @@
             cone.translateY(-SPHERE_RADIUS/2);
             let conePivot = new THREE.Object3D();
             conePivot.add(cone);                
-            conePivot.setRotationFromEuler(new THREE.Euler(-Math.PI/2,0,0, 'XYZ'));
+            conePivot.setRotationFromEuler(new THREE.Euler(Math.PI,0,0, 'XYZ'));
             conePivot.name = "target";
             
             _sphereGroup.add(conePivot);

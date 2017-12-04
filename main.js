@@ -1,10 +1,5 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (require('electron-squirrel-startup')) { // eslint-disable-line global-require
-  app.quit();
-}
-
 /** variable to hold the data for the current block. has properties:
     blockCode: str
     conditionCode: str
@@ -27,10 +22,10 @@ let block={};
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-let experimentSetupWindow;
-let sequenceWindow;
-let sequenceSummaryWindow;
-let blockSummaryWindow;
+let experimentSetupWindow=null;
+let sequenceWindow=null;
+let sequenceSummaryWindow=null;
+let blockSummaryWindow=null;
 
 const createBlockSummaryWindow = () =>{
     blockSummaryWindow = new BrowserWindow({
@@ -135,17 +130,58 @@ app.on('activate', () => {
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
 
+
+
 ipcMain.on('setup:complete', (event, setupConfig) => {    
 
     blockConfiguration = setupConfig;
     block['trials'] =  blockConfiguration['numTargets'] ;
+    block['inputType'] = blockConfiguration['inputType'];
     block['sequences'] = shuffle(prepareSequenceSetups(setupConfig));
     block['currentSeq'] = 0;
+
     createDataFiles();
     
     createSequenceWindow(startNextSequence);    
     closeExperimentSetupWindow(); 
 })
+
+
+//WebServer
+const PORT_NUMBER = 80;
+var express = require('express');
+var webApp = express();
+
+webApp.use('/', express.static('public'));
+
+webApp.use(express.json());
+webApp.use(express.urlencoded({ extended: true }));    
+
+webApp.post('/motion', (request, response)=>{
+    if(sequenceWindow!==null){
+        sequenceWindow.send('device:rotation', request.body.orientation)
+    }
+    response.sendStatus(200);
+})
+
+webApp.get('/motion', (request, response)=>{
+
+    console.log(devices);
+    response.send(devices);
+})
+
+webApp.listen(PORT_NUMBER, function () {
+    console.log('Server started on port '+ PORT_NUMBER);
+}).on('error', function(){
+    console.log('Port '+ PORT_NUMBER +' taken');
+});
+
+// Handle creating/removing shortcuts on Windows when installing/uninstalling.
+if (require('electron-squirrel-startup')) { // eslint-disable-line global-require
+  app.quit();
+}
+
+
 
 // create the data output csv files for this participant/block/condition
 function createDataFiles(){
