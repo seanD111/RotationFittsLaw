@@ -10,11 +10,35 @@
         const THREE = require('three');
         const {ipcRenderer} = require('electron');  
 
+        class Trial{
+
+        }
+
+        class Sequence{
+            constructor(ampwidthObj, sphereGroup){
+                this._amplitude = ampwidthObj['amplitude'];
+                this._width = ampwidthObj['width'];
+
+                this._onCallbacks={};
+                this.initialize();
+
+            }
+            initialize(){
+                
+            }
+            start(){
+
+            }
+            on(event, callback){
+                this._onCallbacks[event] = callback;
+            }
+        }
 
         class Block {
-            constuctor(sequenceData){
-                this._blockData;
-                this._sphereGroup; 
+            constructor(sequenceData){
+                this._blockData={};
+                this._sphereGroup={}; 
+                this._sequences=[];
 
                 sequenceData ? this.blockData = sequenceData : null; 
               
@@ -81,6 +105,7 @@
                     render();
 
                     this._updateInputMethods();
+                    this._createSequences();
                 });
             }
             _updateInputMethods(){
@@ -92,17 +117,17 @@
                         var deltaX= event.movementX;
                         var deltaY= event.movementY;
 
-                        this.deltaSphereEuler(deltaY*MOUSE_CDGAIN,deltaX*MOUSE_CDGAIN,0,'XYZ');
+                        this._deltaSphereEuler(deltaY*MOUSE_CDGAIN,deltaX*MOUSE_CDGAIN,0,'XYZ');
 
                     }, false);
                 } 
                 else if(this._blockData['inputType']==='gyroscope'){
                     ipcRenderer.on('device:rotation', (event, rot)=>{
-                        this.setSphereEuler(rot.beta, rot.alpha, -rot.gamma, 'YXZ');
+                        this._setSphereEuler(rot.beta, rot.alpha, -rot.gamma, 'YXZ');
                     })
                 }
             }
-            deltaSphereEuler(x, y, z, order){
+            _deltaSphereEuler(x, y, z, order){
                 var deltaRotationQuaternion = new THREE.Quaternion()
                     .setFromEuler(new THREE.Euler(
                         x,
@@ -112,7 +137,7 @@
                     ));            
                 this._sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, this._sphereGroup.quaternion);
             }
-            setSphereEuler(x, y, z, order){
+            _setSphereEuler(x, y, z, order){
                 var deltaRotationQuaternion = new THREE.Quaternion()
                     .setFromEuler(new THREE.Euler(
                         x,
@@ -124,10 +149,16 @@
                 this._sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
             }
 
+            _createSequences(){
+                this._blockData['sequences'].forEach((seq)=>{
+                    var newSequence = new Sequence(seq, this._sphereGroup);
+                    this._sequences.apppend(newSequence);
+                })
+            }
+
             set blockData(data){
                 this._blockData = data;
-                this._blockData['currentTrial'] = 0;
-                this._blockData['currentSeq'] = 0;
+                console.log(this._blockData)
             }            
         }
 
@@ -151,35 +182,35 @@
 
 
 
-        function startSequence(){
-            var prevTarget = _sphereGroup.getObjectByName("target");
-            _sphereGroup.remove(prevTarget);
+        // function startSequence(){
+        //     var prevTarget = _sphereGroup.getObjectByName("target");
+        //     _sphereGroup.remove(prevTarget);
 
-            var currSeq = _sequenceData["sequences"][_sequenceData["currentSeq"]];
-            var width = currSeq['width'];
+        //     var currSeq = _sequenceData["sequences"][_sequenceData["currentSeq"]];
+        //     var width = currSeq['width'];
 
-            var coneGeom = new THREE.ConeGeometry(width*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
-            for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
-                i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
-            }
-            var coneEndMat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
-            var coneTransparentMat = new THREE.MeshBasicMaterial( { color: 0x000000, transparent: true, opacity: 0.15 } );
-            var cone = new THREE.Mesh( coneGeom, new THREE.MultiMaterial([coneTransparentMat, coneEndMat]) );
-            cone.translateY(-SPHERE_RADIUS/2);
-            let conePivot = new THREE.Object3D();
-            conePivot.add(cone);                
-            conePivot.setRotationFromEuler(new THREE.Euler(Math.PI,0,0, 'XYZ'));
-            conePivot.name = "target";            
-            _sphereGroup.add(conePivot);
+        //     var coneGeom = new THREE.ConeGeometry(width*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
+        //     for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
+        //         i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
+        //     }
+        //     var coneEndMat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
+        //     var coneTransparentMat = new THREE.MeshBasicMaterial( { color: 0x000000, transparent: true, opacity: 0.15 } );
+        //     var cone = new THREE.Mesh( coneGeom, new THREE.MultiMaterial([coneTransparentMat, coneEndMat]) );
+        //     cone.translateY(-SPHERE_RADIUS/2);
+        //     let conePivot = new THREE.Object3D();
+        //     conePivot.add(cone);                
+        //     conePivot.setRotationFromEuler(new THREE.Euler(Math.PI,0,0, 'XYZ'));
+        //     conePivot.name = "target";            
+        //     _sphereGroup.add(conePivot);
 
-            runTrial();
+        //     runTrial();
 
-        }
+        // }
 
-        function runTrial(){
-            var trial={}
-            trial[]
-        }
+        // function runTrial(){
+        //     var trial={}
+        //     trial[]
+        // }
 
 
 

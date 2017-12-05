@@ -26,8 +26,8 @@
     </form>
 </body>
 <script type="text/javascript">
-    const FORM_FIELDS = ['participantCode', "conditionCode", "blockCode", "numTargets", "targetAmplitudes", "targetWidths", "errorThreshold",'inputType'];
-    const FORM_NUMERIC_FIELDS = ['numTargets', "targetAmplitudes", "targetWidths", "errorThreshold"];
+    const FORM_FIELDS = ['participantCode', "conditionCode", "blockCode", "trials", "targetAmplitudes", "targetWidths", "errorThreshold",'inputType'];
+    const FORM_NUMERIC_FIELDS = ['trials', "targetAmplitudes", "targetWidths", "errorThreshold"];
 
     const {ipcRenderer} = require('electron');
     const submitForm = document.getElementById("experimentSetup");
