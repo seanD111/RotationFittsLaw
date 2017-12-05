@@ -11,14 +11,6 @@ import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 */
 let blockConfiguration={};
 
-/**
- * Holds the randomized sequence information for this block
- * @type {Object}
- * @property {array} sequences holds an array of the experiment sequences
- * @property {int} currentSeq holds the index to current sequence
- * @property {int} trials specifies the nuber of targets in the sequence
- */
-let block={};
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -135,10 +127,7 @@ app.on('activate', () => {
 ipcMain.on('setup:complete', (event, setupConfig) => {    
 
     blockConfiguration = setupConfig;
-    block['trials'] =  blockConfiguration['numTargets'] ;
-    block['inputType'] = blockConfiguration['inputType'];
-    block['sequences'] = shuffle(prepareSequenceSetups(setupConfig));
-    block['currentSeq'] = 0;
+    blockConfiguration['sequences'] = shuffle(prepareSequenceSetups(setupConfig));
 
     createDataFiles();
     
@@ -195,8 +184,7 @@ function createDataFiles(){
 }
 
 function startNextSequence(){
-    let cfg= blockConfiguration;
-    sequenceWindow.send("sequence:start", block);
+    sequenceWindow.send("sequence:start", blockConfiguration);
 }
 
 
