@@ -4,31 +4,165 @@
     <title>Sequence</title>
     <script>
         const GYRO_CDGAIN = 2;
+        const TRIAL_DEADZONE = 5*(Math.PI/180); // 5 degrees rotation will start the task timer
         const MOUSE_CDGAIN = (1/10) *(Math.PI/180);
         const SPHERE_SEGMENTS=64;
         const SPHERE_RADIUS = 1;
-        const THREE = require('three');
+        const THREE = require('three');        
         const {ipcRenderer} = require('electron');  
 
+        var THREE_SCENE = new THREE.Scene();
+        var THREE_SPHERE;
+
         class Trial{
-
-        }
-
-        class Sequence{
-            constructor(ampwidthObj, sphereGroup){
-                this._amplitude = ampwidthObj['amplitude'];
-                this._width = ampwidthObj['width'];
-
-                this._onCallbacks={};
-                this.initialize();
-
-            }
-            initialize(){
+            constructor(targetQuat, targetWidth){
+                this.targetInitialAngle = targetQuat;
+                this.targetWidth = targetWidth;
                 
+                this._startTime = -1;
+                this._endTime = -1;
+                this._targetCone;
+                this.targetFinalAngle;
+                this.targetMiss;
+                this.effectiveAmplitude;
+                this.movementTime;
+
+                this._onCallbacks={
+                    start: ()=>{},
+                    end: ()=>{}
+                };
             }
             start(){
 
+                var coneGeom = new THREE.ConeGeometry(this.targetWidth*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
+                for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
+                    i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
+                }
+                var coneEndMat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
+                var coneTransparentMat = new THREE.MeshBasicMaterial( { color: 0x000000, transparent: true, opacity: 0.15 } );
+                var cone = new THREE.Mesh( coneGeom, new THREE.MultiMaterial([coneTransparentMat, coneEndMat]) );
+                cone.setRotationFromEuler(new THREE.Euler(-Math.PI/2,0,0, 'XYZ'));
+                cone.translateY(-SPHERE_RADIUS/2);
+
+                this._targetCone = new THREE.Object3D();
+                this._targetCone.add(cone);                
+
+                this._targetCone.name = "target";
+
+                this._targetCone.applyQuaternion(this.targetInitialAngle);          
+                THREE_SCENE.add(this._targetCone);
+
+                this._onCallbacks['start']();
             }
+
+            end(){
+                this._endTime = Date.now();
+                this.movementTime = this._endTime - this._startTime;
+                this.targetFinalAngle = this._targetCone.quaternion.clone();
+
+                THREE_SCENE.remove(this._targetCone);
+                this._onCallbacks['end']();
+            }
+            startTimer(){
+                if(this._startTime<0){
+                    this._startTime = Date.now();
+                }                
+            }
+            getCone(){
+                return this._targetCone;
+            }
+
+            on(event, callback){
+                this._onCallbacks[event] = callback;
+            }
+        }
+
+        class Sequence{
+            constructor(amplitude, width, numtargets){
+                this._amplitude = amplitude;
+                this._width = width;
+                this._totalTrials = numtargets;
+
+                this._currentTrial = 0;
+                this._onCallbacks={
+                    start: ()=>{},
+                    end: ()=>{},
+                    trialEnd: ()=>{}
+                };
+                this._trials = [];
+
+            }
+            initialize(){
+                var delta_angle_Z = (2*Math.PI)/this._totalTrials;
+
+                // var startQuat = new THREE.Quaternion();
+                // startQuat.setFromAxisAngle(new THREE.Vector3(0,1,0), targetAngle)
+
+                for(var i = 0; i< this._totalTrials; i++){
+                    let quat1 = new THREE.Quaternion()
+                    quat1.setFromEuler(new THREE.Euler(0, this._amplitude, 0), 'XYZ');
+
+                    let quat2 = new THREE.Quaternion()
+
+                    let tempAngle = (delta_angle_Z*i) + (i%2?Math.PI:0);
+                    quat2.setFromEuler(new THREE.Euler(0,0, tempAngle,'XYZ'));
+
+                    // let targetVec= new THREE.Vector3(
+                    //     Math.cos(delta_angle_Z*i)*Math.sin(targetAngle), 
+                    //     Math.sin(delta_angle_Z*i)*Math.sin(targetAngle),
+                    //     Math.cos(targetAngle)
+                    // );
+                    // 
+                    let targetQuat = new THREE.Quaternion();
+                    targetQuat.multiplyQuaternions(quat2, quat1);
+
+                    this._trials.push(new Trial(targetQuat, this._width))       
+                }
+
+                for(let i = 0; i< this._totalTrials-1; i++){
+                    this._trials[i].on('end', ()=>{
+                        this._currentTrial++;
+                        this._trials[i+1].start();
+
+
+
+                        let refVect= new THREE.Vector3(0,0,1);
+
+                        let missVect = new THREE.Vector3(0,0,1);
+                        missVect.applyQuaternion(this._trials[i].targetFinalAngle);
+
+                        let targetVect = new THREE.Vector3(0,0,1);
+                        targetVect.applyQuaternion(this._trials[i].targetInitialAngle);
+
+                        let lenA = Math.acos(refVect.dot(targetVect));
+                        let lenB = Math.acos(missVect.dot(targetVect));
+                        let lenC = Math.acos(refVect.dot(missVect));
+
+                        let dx = ((lenA*lenA) + (lenC*lenC) - (lenB*lenB))/(2*lenA);
+                        let effectiveAmplitude = lenA - dx;
+                        console.log(effectiveAmplitude, lenA, this._trials[i].movementTime);
+                    })
+                }
+
+                this._trials[this._totalTrials-1].on('end', ()=>{
+                    this.end();
+                });
+
+
+            }
+            currentTrial(){
+                return this._trials[this._currentTrial];
+            }
+
+            start(){
+                this._trials[0].start();
+                this._onCallbacks['start']();
+            }
+
+            end(){
+                this._onCallbacks['end']();
+            }
+
             on(event, callback){
                 this._onCallbacks[event] = callback;
             }
@@ -37,17 +171,26 @@
         class Block {
             constructor(sequenceData){
                 this._blockData={};
-                this._sphereGroup={}; 
                 this._sequences=[];
+                this._currentSequence=0;
 
                 sequenceData ? this.blockData = sequenceData : null; 
-              
+
+                this._onCallbacks={
+                    start: ()=>{},
+                    end: ()=>{},
+                    ready: ()=>{}
+                };
+            }
+
+            on(event, callback){
+                this._onCallbacks[event] = callback;
             }
 
             initialize(){
                 var aspect = window.innerWidth / window.innerHeight;
                 var frustum = SPHERE_RADIUS*1.1;
-                var scene = new THREE.Scene();
+                
                 var camera = new THREE.OrthographicCamera( -frustum * aspect, frustum * aspect, frustum, -frustum, 1, 1000 );
                 // var camera = new THREE.PerspectiveCamera( 75, aspect, 0.1, 1000 );
                 var renderer = new THREE.WebGLRenderer();
@@ -69,10 +212,10 @@
                     metalSphere.renderOrder=1;
                     metalSphere.name = "sphere";
 
-                    this._sphereGroup = new THREE.Group()
+                    THREE_SPHERE = new THREE.Group()
 
-                    this._sphereGroup.add(metalSphere)
-                    scene.add( this._sphereGroup );
+                    THREE_SPHERE.add(metalSphere)
+                    THREE_SCENE.add( THREE_SPHERE);
                     var crossMat = new THREE.LineBasicMaterial({ color: 0x000000 });
 
                     // crosshair size
@@ -95,17 +238,18 @@
                     crosshair.position.z = 1.1;
 
 
-                    scene.add( crosshair );
+                    THREE_SCENE.add( crosshair );
 
                     
                     var render = function () {
                       requestAnimationFrame( render );
-                      renderer.render( scene, camera );
+                      renderer.render( THREE_SCENE, camera );
                     };
                     render();
 
                     this._updateInputMethods();
                     this._createSequences();
+                    this._onCallbacks['ready']();
                 });
             }
             _updateInputMethods(){
@@ -126,6 +270,11 @@
                         this._setSphereEuler(rot.beta, rot.alpha, -rot.gamma, 'YXZ');
                     })
                 }
+                document.body.addEventListener("keypress", (event)=>{
+                    if(event.code==="Enter"){
+                        this.currentTrial().end();
+                    } 
+                });
             }
             _deltaSphereEuler(x, y, z, order){
                 var deltaRotationQuaternion = new THREE.Quaternion()
@@ -134,8 +283,20 @@
                         y,
                         z,
                         order
-                    ));            
-                this._sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, this._sphereGroup.quaternion);
+                    ));
+                var curCone = this.currentTrial().getCone()
+                if(curCone){
+                    curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, curCone.quaternion);
+                    let refVect= new THREE.Vector3(0,0,1);
+                    refVect.applyQuaternion(this.currentTrial().targetInitialAngle);
+                    let coneVect = new THREE.Vector3(0,0,1);
+                    coneVect.applyQuaternion(curCone.quaternion);
+                    if(Math.acos(refVect.dot(coneVect))>TRIAL_DEADZONE){
+                        this.currentTrial().startTimer()
+                    }
+                }            
+                THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, THREE_SPHERE.quaternion);
+
             }
             _setSphereEuler(x, y, z, order){
                 var deltaRotationQuaternion = new THREE.Quaternion()
@@ -145,15 +306,40 @@
                         z,
                         order
                     ));
-                
-                this._sphereGroup.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
+                var curCone = this.currentTrial().getCone() 
+                if(curCone){
+                    curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
+                    let refVect= new THREE.Vector3(0,0,1);
+                    refVect.applyQuaternion(this.currentTrial().targetInitialAngle);
+                    let coneVect = new THREE.Vector3(0,0,1);
+                    coneVect.applyQuaternion(curCone.quaternion);
+                    if(Math.acos(refVect.dot(coneVect))>TRIAL_DEADZONE){
+                        this.currentTrial().startTimer()
+                    }
+                }   
+                THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
             }
 
             _createSequences(){
-                this._blockData['sequences'].forEach((seq)=>{
-                    var newSequence = new Sequence(seq, this._sphereGroup);
-                    this._sequences.apppend(newSequence);
-                })
+                for(let i = 0; i < this._blockData['sequences'].length; i++){
+                    let seq = this._blockData['sequences'][i];
+                    var newSequence = new Sequence(seq.amplitude, seq.width, this._blockData['trials']);
+                    newSequence.on('end', ()=>{
+                        //show sequence summary
+                        console.log('sequence done');
+                        this._currentSequence++;
+                        this.currentSequence().start();
+                    })
+                    newSequence.initialize();
+                    this._sequences.push(newSequence);
+                }                
+            }
+
+            currentSequence(){
+                return this._sequences[this._currentSequence];
+            }
+            currentTrial(){
+                return this.currentSequence().currentTrial();
             }
 
             set blockData(data){
@@ -178,39 +364,10 @@
         ipcRenderer.on('sequence:start', (event, sequenceData)=>{
             experiment = new Block(sequenceData);
             experiment.initialize();
-        })
-
-
-
-        // function startSequence(){
-        //     var prevTarget = _sphereGroup.getObjectByName("target");
-        //     _sphereGroup.remove(prevTarget);
-
-        //     var currSeq = _sequenceData["sequences"][_sequenceData["currentSeq"]];
-        //     var width = currSeq['width'];
-
-        //     var coneGeom = new THREE.ConeGeometry(width*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
-        //     for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
-        //         i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
-        //     }
-        //     var coneEndMat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
-        //     var coneTransparentMat = new THREE.MeshBasicMaterial( { color: 0x000000, transparent: true, opacity: 0.15 } );
-        //     var cone = new THREE.Mesh( coneGeom, new THREE.MultiMaterial([coneTransparentMat, coneEndMat]) );
-        //     cone.translateY(-SPHERE_RADIUS/2);
-        //     let conePivot = new THREE.Object3D();
-        //     conePivot.add(cone);                
-        //     conePivot.setRotationFromEuler(new THREE.Euler(Math.PI,0,0, 'XYZ'));
-        //     conePivot.name = "target";            
-        //     _sphereGroup.add(conePivot);
-
-        //     runTrial();
-
-        // }
-
-        // function runTrial(){
-        //     var trial={}
-        //     trial[]
-        // }
+            experiment.on('ready', ()=>{
+                experiment.currentSequence().start();
+            })
+         })
 
 
 

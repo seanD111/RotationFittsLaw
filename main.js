@@ -4,10 +4,12 @@ import { app, BrowserWindow, Menu, ipcMain } from 'electron';
     blockCode: str
     conditionCode: str
     errorThreshold: num
-    numTargets: num
+    trials: num
     participantCode: str
     targetAmplitudes: arr[num]
     targetWidths: arr[num]
+    inputType: str
+    sequences: arr[obj]
 */
 let blockConfiguration={};
 
