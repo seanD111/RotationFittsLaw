@@ -3,9 +3,10 @@
 <head>
     <title>Sequence</title>
     <script>
-        const GYRO_CDGAIN = 2;
         const TRIAL_DEADZONE = 5*(Math.PI/180); // 5 degrees rotation will start the task timer
         const MOUSE_CDGAIN = (1/10) *(Math.PI/180);
+        const JOYSTICK_CDGAIN = (3) *(Math.PI/180);
+        const JOYSTICK_DEADZONE = 0.15;
         const SPHERE_SEGMENTS=64;
         const SPHERE_RADIUS = 1;
         const THREE = require('three');        
@@ -15,26 +16,29 @@
         var THREE_SPHERE;
 
         class Trial{
-            constructor(targetQuat, targetWidth){
+            constructor(trialI, targetQuat, targetWidth){
                 this.targetInitialAngle = targetQuat;
-                this.targetWidth = targetWidth;
+                this.W = targetWidth;
+                this.A;
+                this.index = trialI;
                 
                 this._startTime = -1;
                 this._endTime = -1;
                 this._targetCone;
                 this.targetFinalAngle;
-                this.targetMiss;
-                this.effectiveAmplitude;
-                this.movementTime;
+                this.dx;
+                this.Ae;
+                this.MT;
+                this.Error;
 
                 this._onCallbacks={
-                    start: ()=>{},
-                    end: ()=>{}
+                    start: [],
+                    end: []
                 };
             }
             start(){
 
-                var coneGeom = new THREE.ConeGeometry(this.targetWidth*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
+                var coneGeom = new THREE.ConeGeometry(this.W*0.5*SPHERE_RADIUS, SPHERE_RADIUS, SPHERE_SEGMENTS,1);
                 for ( var i = 0; i <coneGeom.faces.length; i ++ ) {
                     i < SPHERE_SEGMENTS?  coneGeom.faces[ i ].materialIndex=0: coneGeom.faces[ i ].materialIndex=1;
                 }
@@ -52,16 +56,36 @@
                 this._targetCone.applyQuaternion(this.targetInitialAngle);          
                 THREE_SCENE.add(this._targetCone);
 
-                this._onCallbacks['start']();
+
+                this._onCallbacks['start'].forEach((fn)=>{fn()});
             }
 
             end(){
                 this._endTime = Date.now();
-                this.movementTime = this._endTime - this._startTime;
+                this.MT = this._endTime - this._startTime;
                 this.targetFinalAngle = this._targetCone.quaternion.clone();
 
+                let refVect= new THREE.Vector3(0,0,1);
+
+                let missVect = new THREE.Vector3(0,0,1);
+                missVect.applyQuaternion(this.targetFinalAngle);
+
+                let targetVect = new THREE.Vector3(0,0,1);
+                targetVect.applyQuaternion(this.targetInitialAngle);
+
+                let lenA = Math.acos(refVect.dot(targetVect));
+                let lenB = Math.acos(missVect.dot(targetVect));
+                let lenC = Math.acos(refVect.dot(missVect));
+
+                this.Error = +(lenC > (this.W/2));
+                this.dx = ((lenA*lenA) + (lenC*lenC) - (lenB*lenB))/(2*lenA);
+                this.A = lenA;
+                this.Ae = lenA - this.dx;
+
+                console.log(this.index, this.MT, this.A, this.Ae, this.Error);
+
                 THREE_SCENE.remove(this._targetCone);
-                this._onCallbacks['end']();
+                this._onCallbacks['end'].forEach((fn)=>{fn()});
             }
             startTimer(){
                 if(this._startTime<0){
@@ -73,34 +97,41 @@
             }
 
             on(event, callback){
-                this._onCallbacks[event] = callback;
+                this._onCallbacks[event].push(callback);
             }
         }
 
         class Sequence{
             constructor(amplitude, width, numtargets){
-                this._amplitude = amplitude;
-                this._width = width;
-                this._totalTrials = numtargets;
+                this.A = amplitude;
+                this.W = width;
+                this.nTrials = numtargets;
+                this.ID = Math.log2((this.A/this.W) + 1);
+
+                this.Ae;
+                this.We;
+                this.IDe;
+                this.MT;
+                this.ER;
+                this.TP;
 
                 this._currentTrial = 0;
                 this._onCallbacks={
-                    start: ()=>{},
-                    end: ()=>{},
-                    trialEnd: ()=>{}
+                    start: [],
+                    end: []
                 };
                 this._trials = [];
 
             }
             initialize(){
-                var delta_angle_Z = (2*Math.PI)/this._totalTrials;
+                var delta_angle_Z = (2*Math.PI)/this.nTrials;
 
                 // var startQuat = new THREE.Quaternion();
                 // startQuat.setFromAxisAngle(new THREE.Vector3(0,1,0), targetAngle)
 
-                for(var i = 0; i< this._totalTrials; i++){
+                for(var i = 0; i< this.nTrials; i++){
                     let quat1 = new THREE.Quaternion()
-                    quat1.setFromEuler(new THREE.Euler(0, this._amplitude, 0), 'XYZ');
+                    quat1.setFromEuler(new THREE.Euler(0, this.A, 0), 'XYZ');
 
                     let quat2 = new THREE.Quaternion()
 
@@ -116,35 +147,17 @@
                     let targetQuat = new THREE.Quaternion();
                     targetQuat.multiplyQuaternions(quat2, quat1);
 
-                    this._trials.push(new Trial(targetQuat, this._width))       
+                    this._trials.push(new Trial(i, targetQuat, this.W))       
                 }
 
-                for(let i = 0; i< this._totalTrials-1; i++){
+                for(let i = 0; i< this.nTrials-1; i++){
                     this._trials[i].on('end', ()=>{
                         this._currentTrial++;
                         this._trials[i+1].start();
-
-
-
-                        let refVect= new THREE.Vector3(0,0,1);
-
-                        let missVect = new THREE.Vector3(0,0,1);
-                        missVect.applyQuaternion(this._trials[i].targetFinalAngle);
-
-                        let targetVect = new THREE.Vector3(0,0,1);
-                        targetVect.applyQuaternion(this._trials[i].targetInitialAngle);
-
-                        let lenA = Math.acos(refVect.dot(targetVect));
-                        let lenB = Math.acos(missVect.dot(targetVect));
-                        let lenC = Math.acos(refVect.dot(missVect));
-
-                        let dx = ((lenA*lenA) + (lenC*lenC) - (lenB*lenB))/(2*lenA);
-                        let effectiveAmplitude = lenA - dx;
-                        console.log(effectiveAmplitude, lenA, this._trials[i].movementTime);
                     })
                 }
 
-                this._trials[this._totalTrials-1].on('end', ()=>{
+                this._trials[this.nTrials-1].on('end', ()=>{
                     this.end();
                 });
 
@@ -156,15 +169,24 @@
 
             start(){
                 this._trials[0].start();
-                this._onCallbacks['start']();
+                this._onCallbacks['start'].forEach((fn)=>{fn()});
             }
 
             end(){
-                this._onCallbacks['end']();
+                this.ER = 100*this._trials.reduce( (acc,trial) => acc+trial.Error, 0 ) / this._trials.length;
+                this.MT = this._trials.reduce( (acc,trial) => acc+trial.MT, 0 ) / this._trials.length;
+                this.Ae = this._trials.reduce( (acc,trial) => acc+trial.Ae, 0 ) / this._trials.length;
+                this.We = 4.133*standardDeviation(this._trials.map( (trial)=> trial.dx));
+                this.IDe = Math.log2((this.Ae/this.We) + 1);
+                this.TP = (this.IDe/this.MT)*1000;
+
+                console.log(this.ER, this.ID, this.IDe, this.TP)
+
+                this._onCallbacks['end'].forEach((fn)=>{fn()});
             }
 
             on(event, callback){
-                this._onCallbacks[event] = callback;
+                this._onCallbacks[event].push(callback);
             }
         }
 
@@ -174,17 +196,19 @@
                 this._sequences=[];
                 this._currentSequence=0;
 
+                this._gamePad;
+
                 sequenceData ? this.blockData = sequenceData : null; 
 
                 this._onCallbacks={
-                    start: ()=>{},
-                    end: ()=>{},
-                    ready: ()=>{}
+                    start: [],
+                    end: [],
+                    ready: []
                 };
             }
 
             on(event, callback){
-                this._onCallbacks[event] = callback;
+                this._onCallbacks[event].push(callback);
             }
 
             initialize(){
@@ -249,7 +273,7 @@
 
                     this._updateInputMethods();
                     this._createSequences();
-                    this._onCallbacks['ready']();
+                    this._onCallbacks['ready'].forEach((fn)=>{fn()});
                 });
             }
             _updateInputMethods(){
@@ -269,6 +293,22 @@
                     ipcRenderer.on('device:rotation', (event, rot)=>{
                         this._setSphereEuler(rot.beta, rot.alpha, -rot.gamma, 'YXZ');
                     })
+                }
+                else if(this._blockData['inputType']==='joystick'){
+                    window.addEventListener("gamepadconnected", (e)=> {                        
+                        var updateGamepad =  ()=> {
+                            requestAnimationFrame( updateGamepad );
+
+                            var gp = navigator.getGamepads()[e.gamepad.index];                        
+                            if(gp.id.indexOf('Xbox 360 Controller')>=0){
+                                if(Math.sqrt(gp.axes[3]*gp.axes[3] + gp.axes[2]*gp.axes[2] )>= JOYSTICK_DEADZONE){
+                                    this._deltaSphereEuler(gp.axes[3]*JOYSTICK_CDGAIN,gp.axes[2]*JOYSTICK_CDGAIN,0,'XYZ');
+                                }                                
+                            }
+                        };
+                        updateGamepad();                        
+                    });
+
                 }
                 document.body.addEventListener("keypress", (event)=>{
                     if(event.code==="Enter"){
@@ -326,9 +366,6 @@
                     var newSequence = new Sequence(seq.amplitude, seq.width, this._blockData['trials']);
                     newSequence.on('end', ()=>{
                         //show sequence summary
-                        console.log('sequence done');
-                        this._currentSequence++;
-                        this.currentSequence().start();
                     })
                     newSequence.initialize();
                     this._sequences.push(newSequence);
@@ -346,6 +383,30 @@
                 this._blockData = data;
                 console.log(this._blockData)
             }            
+        }
+
+        function standardDeviation(values){
+          var avg = average(values);
+          
+          var squareDiffs = values.map(function(value){
+            var diff = value - avg;
+            var sqrDiff = diff * diff;
+            return sqrDiff;
+          });
+          
+          var avgSquareDiff = average(squareDiffs);
+
+          var stdDev = Math.sqrt(avgSquareDiff);
+          return stdDev;
+        }
+
+        function average(data){
+          var sum = data.reduce(function(sum, value){
+            return sum + value;
+          }, 0);
+
+          var avg = sum / data.length;
+          return avg;
         }
 
     </script>    
