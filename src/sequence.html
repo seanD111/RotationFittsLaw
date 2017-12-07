@@ -3,9 +3,11 @@
 <head>
     <title>Sequence</title>
     <script>
+        const SD1_HEADERS = ['Participant', 'Condition', 'Block', 'Trial', 'A', 'W', 'Ae', 'dx', 'MT', 'Error'];
+        const SD2_HEADERS = ['Participant', 'Condition', 'Block', 'SRC', 'Trials', 'A', 'W', 'ID', 'Ae', 'We', 'IDe', 'MT', 'ER', 'TP']
         const TRIAL_DEADZONE = 5*(Math.PI/180); // 5 degrees rotation will start the task timer
         const MOUSE_CDGAIN = (1/10) *(Math.PI/180);
-        const JOYSTICK_CDGAIN = (3) *(Math.PI/180);
+        const JOYSTICK_CDGAIN = (2.5) *(Math.PI/180);
         const JOYSTICK_DEADZONE = 0.15;
         const SPHERE_SEGMENTS=64;
         const SPHERE_RADIUS = 1;
@@ -20,7 +22,7 @@
                 this.targetInitialAngle = targetQuat;
                 this.W = targetWidth;
                 this.A;
-                this.index = trialI;
+                this.Trial = trialI;
                 
                 this._startTime = -1;
                 this._endTime = -1;
@@ -61,6 +63,7 @@
             }
 
             end(){
+                this.startTimer(); //so that time cant be negative
                 this._endTime = Date.now();
                 this.MT = this._endTime - this._startTime;
                 this.targetFinalAngle = this._targetCone.quaternion.clone();
@@ -73,16 +76,19 @@
                 let targetVect = new THREE.Vector3(0,0,1);
                 targetVect.applyQuaternion(this.targetInitialAngle);
 
-                let lenA = Math.acos(refVect.dot(targetVect));
-                let lenB = Math.acos(missVect.dot(targetVect));
-                let lenC = Math.acos(refVect.dot(missVect));
+                let lenA = Math.acos( Math.max(Math.min(1, refVect.dot(targetVect)), -1) );
+                let lenB = Math.acos( Math.max(Math.min(1, missVect.dot(targetVect)), -1) );
+                let lenC = Math.acos( Math.max(Math.min(1, refVect.dot(missVect)), -1) );
 
                 this.Error = +(lenC > (this.W/2));
                 this.dx = ((lenA*lenA) + (lenC*lenC) - (lenB*lenB))/(2*lenA);
-                this.A = lenA;
+                this.A = lenA.toFixed(6);
                 this.Ae = lenA - this.dx;
 
-                console.log(this.index, this.MT, this.A, this.Ae, this.Error);
+                let toSend = JSON.parse(
+                    JSON.stringify(this, SD1_HEADERS)                
+                )
+                ipcRenderer.send('trial:end', toSend);
 
                 THREE_SCENE.remove(this._targetCone);
                 this._onCallbacks['end'].forEach((fn)=>{fn()});
@@ -105,8 +111,9 @@
             constructor(amplitude, width, numtargets){
                 this.A = amplitude;
                 this.W = width;
-                this.nTrials = numtargets;
+                this.Trials = numtargets;
                 this.ID = Math.log2((this.A/this.W) + 1);
+                this.SRC=0;
 
                 this.Ae;
                 this.We;
@@ -115,21 +122,22 @@
                 this.ER;
                 this.TP;
 
-                this._currentTrial = 0;
+                
                 this._onCallbacks={
                     start: [],
                     end: []
-                };
-                this._trials = [];
+                };               
 
             }
             initialize(){
-                var delta_angle_Z = (2*Math.PI)/this.nTrials;
+                this._currentTrial = 0;
+                this._trials = [];
+                var delta_angle_Z = (Math.PI)/this.Trials;
 
                 // var startQuat = new THREE.Quaternion();
                 // startQuat.setFromAxisAngle(new THREE.Vector3(0,1,0), targetAngle)
 
-                for(var i = 0; i< this.nTrials; i++){
+                for(var i = 0; i< this.Trials; i++){
                     let quat1 = new THREE.Quaternion()
                     quat1.setFromEuler(new THREE.Euler(0, this.A, 0), 'XYZ');
 
@@ -150,14 +158,14 @@
                     this._trials.push(new Trial(i, targetQuat, this.W))       
                 }
 
-                for(let i = 0; i< this.nTrials-1; i++){
+                for(let i = 0; i< this.Trials-1; i++){
                     this._trials[i].on('end', ()=>{
                         this._currentTrial++;
                         this._trials[i+1].start();
                     })
                 }
 
-                this._trials[this.nTrials-1].on('end', ()=>{
+                this._trials[this.Trials-1].on('end', ()=>{
                     this.end();
                 });
 
@@ -180,7 +188,11 @@
                 this.IDe = Math.log2((this.Ae/this.We) + 1);
                 this.TP = (this.IDe/this.MT)*1000;
 
-                console.log(this.ER, this.ID, this.IDe, this.TP)
+
+                let toSend = JSON.parse(
+                    JSON.stringify(this, SD2_HEADERS)                
+                )
+                ipcRenderer.send('sequence:end', toSend);
 
                 this._onCallbacks['end'].forEach((fn)=>{fn()});
             }
@@ -194,7 +206,7 @@
             constructor(sequenceData){
                 this._blockData={};
                 this._sequences=[];
-                this._currentSequence=0;
+                this.sequenceIndex=0;
 
                 this._gamePad;
 
@@ -301,8 +313,12 @@
 
                             var gp = navigator.getGamepads()[e.gamepad.index];                        
                             if(gp.id.indexOf('Xbox 360 Controller')>=0){
-                                if(Math.sqrt(gp.axes[3]*gp.axes[3] + gp.axes[2]*gp.axes[2] )>= JOYSTICK_DEADZONE){
-                                    this._deltaSphereEuler(gp.axes[3]*JOYSTICK_CDGAIN,gp.axes[2]*JOYSTICK_CDGAIN,0,'XYZ');
+                                let xSqr = gp.axes[3]*gp.axes[3];
+                                let ySqr = gp.axes[2]*gp.axes[2];
+                                let magnitude = Math.sqrt( xSqr+ySqr  ); 
+
+                                if(magnitude>= JOYSTICK_DEADZONE){
+                                    this._deltaSphereEuler(gp.axes[3]*magnitude*JOYSTICK_CDGAIN,gp.axes[2]*magnitude*JOYSTICK_CDGAIN,0,'XYZ');
                                 }                                
                             }
                         };
@@ -346,9 +362,10 @@
                         z,
                         order
                     ));
-                var curCone = this.currentTrial().getCone() 
+                var curTrial = this.currentTrial();
+                var curCone = curTrial.getCone() 
                 if(curCone){
-                    curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
+                    curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, curTrial.targetInitialAngle);
                     let refVect= new THREE.Vector3(0,0,1);
                     refVect.applyQuaternion(this.currentTrial().targetInitialAngle);
                     let coneVect = new THREE.Vector3(0,0,1);
@@ -357,7 +374,7 @@
                         this.currentTrial().startTimer()
                     }
                 }   
-                THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, new THREE.Quaternion(0,0,0,1));
+                THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, curTrial.targetInitialAngle);
             }
 
             _createSequences(){
@@ -371,13 +388,30 @@
                     this._sequences.push(newSequence);
                 }                
             }
+            nextSequence(){
 
+                this.sequenceIndex++;
+                if(this.sequenceIndex<this._sequences.length){
+                    this.currentSequence().start();
+                }
+                else{
+                    //finished all sequences
+                    this._onCallbacks['end'].forEach((fn)=>{fn()});
+                }
+                
+            }
+            repeatCurrentSequence(){
+                this.currentSequence().SRC++;
+                this.currentSequence().initialize();
+                this.currentSequence().start();
+            }
             currentSequence(){
-                return this._sequences[this._currentSequence];
+                return this._sequences[this.sequenceIndex];
             }
             currentTrial(){
                 return this.currentSequence().currentTrial();
             }
+
 
             set blockData(data){
                 this._blockData = data;
@@ -422,13 +456,26 @@
         var experiment;
 
 
-        ipcRenderer.on('sequence:start', (event, sequenceData)=>{
+        ipcRenderer.on('block:start', (event, sequenceData)=>{
             experiment = new Block(sequenceData);
             experiment.initialize();
             experiment.on('ready', ()=>{
                 experiment.currentSequence().start();
             })
-         })
+
+            experiment.on('end', ()=>{
+                ipcRenderer.send('block:end', {});
+            })
+
+            ipcRenderer.on('sequence:next', (event, sequenceData)=>{
+                experiment.nextSequence();
+            })
+            ipcRenderer.on('sequence:tooManyErrors', (event, sequenceData)=>{
+                experiment.repeatCurrentSequence();
+            })
+        })
+
+
 
 
 

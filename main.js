@@ -1,4 +1,7 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+const fs = require('fs');
+const SD1_HEADERS = ['Participant', 'Condition', 'Block', 'Trial', 'A', 'W', 'Ae', 'dx', 'MT', 'Error'];
+const SD2_HEADERS = ['Participant', 'Condition', 'Block', 'SRC', 'Trials', 'A', 'W', 'ID', 'Ae', 'We', 'IDe', 'MT', 'ER', 'TP']
 
 /** variable to hold the data for the current block. has properties:
     blockCode: str
@@ -12,6 +15,8 @@ import { app, BrowserWindow, Menu, ipcMain } from 'electron';
     sequences: arr[obj]
 */
 let blockConfiguration={};
+let sd1File;
+let sd2File;
 
 
 // Keep a global reference of the window object, if you don't, the window will
@@ -133,9 +138,49 @@ ipcMain.on('setup:complete', (event, setupConfig) => {
 
     createDataFiles();
     
-    createSequenceWindow(startNextSequence);    
+    createSequenceWindow(startBlock);    
     closeExperimentSetupWindow(); 
 })
+
+ipcMain.on('trial:end', (event, trialData) => {
+    trialData['Participant'] = blockConfiguration["participantCode"];
+    trialData['Condition'] = blockConfiguration["conditionCode"];
+    trialData['Block'] = blockConfiguration["blockCode"]  
+
+    let sd1len = SD1_HEADERS.length;
+    for(let i = 0; i<sd1len-1; i++){
+        let head = SD1_HEADERS[i];
+        sd1File.write(`${trialData[head]},`);
+    }
+    sd1File.write(`${trialData[SD1_HEADERS[sd1len-1]]}\n`);
+})
+
+ipcMain.on('sequence:end', (event, sequenceData) => {
+    if(sequenceData['ER']>=blockConfiguration['errorThreshold']){
+        //repeat sequence
+        sequenceWindow.send('sequence:tooManyErrors', {});
+    } 
+    else{
+        sequenceData['Participant'] = blockConfiguration["participantCode"];  
+        sequenceData['Condition'] = blockConfiguration["conditionCode"];
+        sequenceData['Block'] = blockConfiguration["blockCode"]  
+
+        let sd2len = SD2_HEADERS.length;
+        for(let i = 0; i<sd2len-1; i++){
+            let head = SD2_HEADERS[i];
+            sd2File.write(`${sequenceData[head]},`);
+        }
+        sd2File.write(`${sequenceData[SD2_HEADERS[sd2len-1]]}\n`);
+
+        sequenceWindow.send('sequence:next', {});
+
+    } 
+})
+
+ipcMain.on('block:end', (event, sequenceData) => {
+    app.quit();
+})
+
 
 
 //WebServer
@@ -176,17 +221,29 @@ if (require('electron-squirrel-startup')) { // eslint-disable-line global-requir
 
 // create the data output csv files for this participant/block/condition
 function createDataFiles(){
-    let sd1File = `FittsTaskRotation
+    let sd1Filename = `data/FittsTaskRotation
     -${blockConfiguration["participantCode"]}
     -${blockConfiguration["conditionCode"]}
     -${blockConfiguration["blockCode"]}
-    .sd1`.replace(/\s/gm,"");;
+    .sd1`.replace(/\s/gm,"");
+    let sd2Filename = sd1Filename.replace('sd1', 'sd2');
 
-    console.log(sd1File);
+    sd1File = fs.createWriteStream(sd1Filename);
+    sd2File = fs.createWriteStream(sd2Filename);
+
+    for(let i = 0; i<SD1_HEADERS.length-1; i++){
+        sd1File.write(`${SD1_HEADERS[i]},`);
+    }
+    sd1File.write(`${SD1_HEADERS[SD1_HEADERS.length-1]}\n`);
+
+    for(let i = 0; i<SD2_HEADERS.length-1; i++){
+        sd2File.write(`${SD2_HEADERS[i]},`);
+    }
+    sd2File.write(`${SD2_HEADERS[SD2_HEADERS.length-1]}\n`);
 }
 
-function startNextSequence(){
-    sequenceWindow.send("sequence:start", blockConfiguration);
+function startBlock(){
+    sequenceWindow.send("block:start", blockConfiguration);
 }
 
 
