@@ -34,7 +34,7 @@ const createBlockSummaryWindow = () =>{
         autoHideMenuBar: true,
         title: "Sequence Summary"
     })
-    blockSummaryWindow.loadURL(`file://${__dirname}/src/block-summary.html`);
+    blockSummaryWindow.loadURL(`file://${__dirname}/block-summary.html`);
     blockSummaryWindow.once('ready-to-show', () => {
       blockSummaryWindow.show()
     })
@@ -51,7 +51,7 @@ const createSequenceSummary = () =>{
         autoHideMenuBar: true,
         title: "Sequence Summary"
     })
-    sequenceSummaryWindow.loadURL(`file://${__dirname}/src/sequence-summary.html`);
+    sequenceSummaryWindow.loadURL(`file://${__dirname}/sequence-summary.html`);
     sequenceSummaryWindow.once('ready-to-show', () => {
         sequenceSummaryWindow.show()
     })
@@ -69,7 +69,7 @@ const createSequenceWindow = (onRdyFn) =>{
         frame: false
     })
 
-    sequenceWindow.loadURL(`file://${__dirname}/src/sequence.html`);
+    sequenceWindow.loadURL(`file://${__dirname}/sequence.html`);
     sequenceWindow.once('ready-to-show', () => {
         sequenceWindow.show()
         onRdyFn();
@@ -86,7 +86,7 @@ const createExperimentSetupWindow = () =>{
         autoHideMenuBar: true,
         title: "Experiment Setup"
     })
-    experimentSetupWindow.loadURL(`file://${__dirname}/src/experiment-setup.html`);
+    experimentSetupWindow.loadURL(`file://${__dirname}/experiment-setup.html`);
 
     experimentSetupWindow.once('ready-to-show', () => {
       experimentSetupWindow.show()
@@ -221,7 +221,7 @@ if (require('electron-squirrel-startup')) { // eslint-disable-line global-requir
 
 // create the data output csv files for this participant/block/condition
 function createDataFiles(){
-    let sd1Filename = `data/FittsTaskRotation
+    let sd1Filename = `${__dirname}/data/FittsTaskRotation
     -${blockConfiguration["participantCode"]}
     -${blockConfiguration["conditionCode"]}
     -${blockConfiguration["blockCode"]}
