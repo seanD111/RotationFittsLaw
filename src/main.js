@@ -188,7 +188,7 @@ const PORT_NUMBER = 80;
 var express = require('express');
 var webApp = express();
 
-webApp.use('/', express.static('public'));
+webApp.use('/', express.static(`${__dirname}/public`));
 
 webApp.use(express.json());
 webApp.use(express.urlencoded({ extended: true }));    
