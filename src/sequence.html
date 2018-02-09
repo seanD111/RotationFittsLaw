@@ -11,6 +11,7 @@
         const JOYSTICK_DEADZONE = 0.15;
         const SPHERE_SEGMENTS=64;
         const SPHERE_RADIUS = 1;
+        const INPUT_LOGGING = true;
         const THREE = require('three');        
         const {ipcRenderer} = require('electron');  
 
@@ -215,7 +216,8 @@
                 this._onCallbacks={
                     start: [],
                     end: [],
-                    ready: []
+                    ready: [],
+                    input:[]
                 };
             }
 
@@ -285,6 +287,20 @@
 
                     this._updateInputMethods();
                     this._createSequences();
+                    if(INPUT_LOGGING){
+                        const log_time = 1000;
+                        let angle_sum = 0;
+                        setInterval(()=>{
+                            console.log(`Angle per ${log_time} ms: ${angle_sum*180/Math.PI} degrees`);
+                            angle_sum = 0;
+
+                        }, log_time)
+
+                        this.on('input', (angleDiff)=>{
+                            angle_sum+=angleDiff;
+                        })
+
+                    }
                     this._onCallbacks['ready'].forEach((fn)=>{fn()});
                 });
             }
@@ -342,15 +358,22 @@
                     ));
                 var curCone = this.currentTrial().getCone()
                 if(curCone){
+                    let prevConeVect =  new THREE.Vector3(0,0,1);
+                    prevConeVect.applyQuaternion(curCone.quaternion);
+
                     curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, curCone.quaternion);
                     let refVect= new THREE.Vector3(0,0,1);
                     refVect.applyQuaternion(this.currentTrial().targetInitialAngle);
                     let coneVect = new THREE.Vector3(0,0,1);
                     coneVect.applyQuaternion(curCone.quaternion);
+
+                    this._onCallbacks['input'].forEach((fn)=>{fn(Math.acos(prevConeVect.dot(coneVect)))}); 
                     if(Math.acos(refVect.dot(coneVect))>TRIAL_DEADZONE){
                         this.currentTrial().startTimer()
                     }
-                }            
+                    
+                }
+                           
                 THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, THREE_SPHERE.quaternion);
 
             }
@@ -365,6 +388,9 @@
                 var curTrial = this.currentTrial();
                 var curCone = curTrial.getCone() 
                 if(curCone){
+                    let prevConeVect =  new THREE.Vector3(0,0,1);
+                    prevConeVect.applyQuaternion(curCone.quaternion);
+
                     curCone.quaternion.multiplyQuaternions(deltaRotationQuaternion, curTrial.targetInitialAngle);
                     let refVect= new THREE.Vector3(0,0,1);
                     refVect.applyQuaternion(this.currentTrial().targetInitialAngle);
@@ -373,9 +399,11 @@
                     if(Math.acos(refVect.dot(coneVect))>TRIAL_DEADZONE){
                         this.currentTrial().startTimer()
                     }
-                }   
+                    this._onCallbacks['input'].forEach((fn)=>{fn(Math.acos(prevConeVect.dot(coneVect)))}); 
+                }                    
                 THREE_SPHERE.quaternion.multiplyQuaternions(deltaRotationQuaternion, curTrial.targetInitialAngle);
             }
+
 
             _createSequences(){
                 for(let i = 0; i < this._blockData['sequences'].length; i++){
